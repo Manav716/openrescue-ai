@@ -1,0 +1,7 @@
+gymnasium
+stable-baselines3[extra]
+transformers
+torch
+pygame
+numpy
+shimmy
