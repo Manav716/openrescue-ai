@@ -6,6 +6,7 @@ from transformers import pipeline
 import torch
 import time
 import os
+import re
 
 print("=== INITIALIZING OPENRESCUE AI ===")
 
@@ -44,11 +45,30 @@ truncated = False
 step_counter = 0
 printed_messages_count = 0
 
+# --- THE MAGIC: NLP Override State ---
+override_target = None
+
 print("=== STARTING MISSION ===")
 
 while not done and not truncated:
-    # Get action from AI
-    action, _states = model.predict(obs, deterministic=True)
+    
+    # --- NEURO-SYMBOLIC OVERRIDE LOGIC ---
+    if override_target is not None:
+        target_x, target_y = override_target
+        current_x, current_y = base_env.rescue_agent.pos
+        
+        # Symbolic Pathfinding to force the agent to the NLP target
+        if current_x > target_x: action = 0
+        elif current_x < target_x: action = 1
+        elif current_y > target_y: action = 2
+        elif current_y < target_y: action = 3
+        else:
+            # Target Reached! Return control to PPO Agent.
+            override_target = None
+            action, _states = model.predict(obs, deterministic=True)
+    else:
+        # Standard RL Autonomous Movement
+        action, _states = model.predict(obs, deterministic=True)
     
     # Step environment
     obs, reward, done, truncated, info = wrapped_env.step(action)
@@ -72,10 +92,18 @@ while not done and not truncated:
             
             if top_category == "Lethal Hazard":
                 print(f"   ⚠️ NLP CLASSIFICATION: {top_category} ({confidence:.1f}%)")
-                print(f"   🤖 COMMAND: Rerouting Rescue Agent to avoid coordinates.")
+                print(f"   🤖 COMMAND: Logging hazard for future avoidance.")
+                
             elif top_category == "Critical Rescue Target":
                 print(f"   🚨 NLP CLASSIFICATION: {top_category} ({confidence:.1f}%)")
-                print(f"   🤖 COMMAND: High priority! Pinging coordinates to Rescue Agent.")
+                
+                # Extract coordinates using Regular Expressions!
+                match = re.search(r'\((\d+),\s*(\d+)\)', msg)
+                if match:
+                    override_target = (int(match.group(1)), int(match.group(2)))
+                    print(f"   ⚡ COMMAND OVERRIDE: Taking control of Rescue Agent!")
+                    print(f"   ⚡ ROUTING TO: {override_target}")
+                    
             else:
                 print(f"   ℹ️ NLP CLASSIFICATION: {top_category} ({confidence:.1f}%)")
         
