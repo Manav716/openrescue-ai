@@ -1,3 +1,14 @@
+---
+title: OpenRescue AI
+emoji: 🚁
+colorFrom: blue
+colorTo: red
+sdk: docker
+app_port: 7860
+pinned: false
+license: mit
+---
+
 # OpenRescue AI
 
 OpenRescue AI is an OpenEnv-compatible disaster response environment for the Meta + Hugging Face + PyTorch OpenEnv Hackathon. It combines a Gymnasium grid world, PPO training, autonomous drone scouting, partial observability, dynamic fire spread, shared memory, and Hugging Face transformer-based command interpretation.
@@ -172,4 +183,3 @@ The `openenv.yaml` manifest declares the environment ID, task, action space, obs
 - Trained model artifact: `models/best_model.zip`
 - Demo path with Hugging Face NLP override: `main.py`
 - Mini-blog: `BLOG.md`
-
