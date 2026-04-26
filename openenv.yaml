@@ -1,0 +1,94 @@
+name: openrescue-ai
+version: "1.0.0"
+description: >
+  A Gymnasium and OpenEnv-compatible multi-agent disaster response environment
+  with PPO control, autonomous drone scouting, partial observability, dynamic
+  fire spread, shared memory, and Hugging Face transformer-based communication.
+author: OpenRescue AI Team
+license: MIT
+tags:
+  - openenv
+  - reinforcement-learning
+  - gymnasium
+  - multi-agent
+  - disaster-response
+  - pytorch
+  - huggingface
+
+environment:
+  id: OpenRescueAI-v0
+  entry_point: env.disaster_env:DisasterEnv
+  framework: gymnasium
+  python: ">=3.10"
+  max_episode_steps: 200
+  render_modes:
+    - ansi
+
+tasks:
+  - id: openrescue-disaster-response
+    name: Neuro-symbolic disaster rescue
+    description: >
+      Control the rescue agent in a partially observable fire-grid world while
+      an autonomous drone discovers hazards and civilians through semantic
+      communication messages.
+    difficulty: medium
+    max_steps: 200
+    reward_range: [-200.0, 500.0]
+
+action_space:
+  type: discrete
+  n: 4
+  description: "Cardinal rescue-agent movement."
+  actions:
+    0: up
+    1: down
+    2: left
+    3: right
+
+observation_space:
+  type: box
+  shape: [10, 10]
+  dtype: int32
+  low: -1
+  high: 4
+  description: >
+    Shared memory grid under partial observability. -1 unknown, 0 empty,
+    1 fire, 2 civilian, 3 rescue agent, 4 drone.
+
+reward:
+  min: -200.0
+  max: 500.0
+  description: >
+    Step cost -1, new rescue-cell exploration +5, drone civilian discovery +20,
+    civilian rescue +100, mission completion +200, fire penalty -100.
+
+openenv:
+  api:
+    health: "GET /health"
+    reset: "POST /reset"
+    step: "POST /step"
+    state: "GET /state"
+    tasks: "GET /tasks"
+  deployment:
+    type: huggingface-space
+    sdk: docker
+    port: 7860
+
+artifacts:
+  model: models/best_model.zip
+  reward_plot: plots/reward_curve.png
+  demo_video: videos/demo.mp4
+  notebook: notebooks/openrescue_training.ipynb
+
+results:
+  - name: Random Agent
+    reward: -5000
+  - name: Early PPO
+    reward: -3000
+  - name: Improved PPO
+    reward: -347
+  - name: Reward-Shaped PPO
+    reward: -135
+  - name: PPO + NLP System
+    reward: -15
+

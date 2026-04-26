@@ -1,35 +1,175 @@
-# 🚁 OpenRescue AI: Neuro-Symbolic Multi-Agent Disaster Response
+# OpenRescue AI
 
-![Python](https://img.shields.io/badge/Python-3.12-blue)
-![Reinforcement Learning](https://img.shields.io/badge/RL-Stable_Baselines3-orange)
-![NLP](https://img.shields.io/badge/NLP-Hugging_Face-yellow)
-![Environment](https://img.shields.io/badge/Sim-Gymnasium-lightgrey)
+OpenRescue AI is an OpenEnv-compatible disaster response environment for the Meta + Hugging Face + PyTorch OpenEnv Hackathon. It combines a Gymnasium grid world, PPO training, autonomous drone scouting, partial observability, dynamic fire spread, shared memory, and Hugging Face transformer-based command interpretation.
 
-## 🚀 Overview
-OpenRescue AI is an advanced Multi-Agent Reinforcement Learning (MARL) simulation designed for autonomous disaster response. Instead of relying purely on spatial pathfinding, this project utilizes **Neuro-Symbolic AI**—combining the spatial decision-making of Reinforcement Learning (PPO) with the semantic reasoning of Natural Language Processing (Transformers).
+The project is intentionally submission-focused: the original PPO and NLP behavior is preserved, while the repository now includes packaging, an OpenEnv manifest, HTTP endpoints, reproducible scripts, and Hugging Face Spaces deployment files.
 
-The simulation features two entities operating simultaneously in a Partially Observable Markov Decision Process (POMDP) environment:
-1. **Autonomous Scout Drone:** Explores the "Fog of War," maps dynamically spreading hazards (fires), and generates natural language alerts based on its sensor data.
-2. **Rescue Unit (PPO Agent):** An RL agent trained via Proximal Policy Optimization with dense reward shaping to navigate the shared memory map, avoid hazards, and extract civilians.
+## What The Agent Does
 
-## 🧠 Core Architecture
+The learned PPO policy controls a rescue agent on a 10x10 disaster grid. A separate autonomous drone explores the map, discovers fires and civilians, and emits semantic messages such as `Civilian detected at (5, 5)`. The demo path classifies those messages with `facebook/bart-large-mnli`; when a civilian report is classified as a critical rescue target, a symbolic coordinate override temporarily routes the rescue agent to the target.
 
-* **The Physics Engine:** A custom grid-world built on `Gymnasium` featuring persistent memory, fog of war, and dynamic cellular automata (fire spreading). Modularly designed with separated `world.py` and `agents.py` logic.
-* **The Spatial Brain:** A `stable-baselines3` PPO algorithm trained for 200,000 timesteps to optimize exploration and hazard avoidance.
-* **The Semantic Brain (Neuro-Symbolic Override):** A local Hugging Face Zero-Shot Classification Transformer (`facebook/bart-large-mnli`) intercepts the drone's text streams in real-time. If it classifies a message as a *Critical Rescue Target*, it uses Regular Expressions to extract coordinates and **symbolically overrides the RL agent**, forcing an immediate, autonomous rescue execution.
+## Architecture
 
-## 📊 Training Results
-By implementing strategic reward shaping (exploration bonuses, time-completion bonuses, and hazard penalties), the agent successfully learned to map the environment rather than just survive.
+| Layer | File | Responsibility |
+| --- | --- | --- |
+| Environment API | `env/disaster_env.py` | Gymnasium reset/step loop, rewards, partial observations, shared memory updates |
+| World model | `env/world.py` | Grid state, static scenario layout, dynamic fire spread |
+| Agents | `env/agents.py` | Rescue and drone movement, drone message generation |
+| Constants | `env/constants.py` | Tile IDs, actions, defaults |
+| OpenEnv server | `app.py` | `/health`, `/reset`, `/step`, `/state`, `/tasks`, `/web` |
+| Pygame demo | `main.py` | PPO model loading, renderer, Hugging Face NLP command override |
+| Training | `scripts/train_ppo.py` | Reproducible PPO training entrypoint |
+| Evaluation | `scripts/evaluate.py` | Deterministic model evaluation |
+| Plotting | `scripts/plot_rewards.py` | Reward progression chart generation |
 
-| Model | Setup | Final Score |
-| :--- | :--- | :--- |
-| Random Agent | No Training | -5000+ |
-| PPO (Base) | 10k Steps | -347 |
-| **PPO + NLP (Final)** | **200k Steps** | **-15 (Mission Success)** |
+## Environment Specification
 
-## 💻 Installation & Usage
+Action space: `Discrete(4)`
 
-### 1. Clone the Repository
+| Action | Meaning |
+| --- | --- |
+| `0` | Move up |
+| `1` | Move down |
+| `2` | Move left |
+| `3` | Move right |
+
+Observation space: `Box(low=-1, high=4, shape=(10, 10), dtype=int32)`
+
+| Value | Meaning |
+| --- | --- |
+| `-1` | Unknown / fog of war |
+| `0` | Empty |
+| `1` | Fire |
+| `2` | Civilian |
+| `3` | Rescue agent |
+| `4` | Drone |
+
+Reward shaping:
+
+| Event | Reward |
+| --- | ---: |
+| Step cost | `-1` |
+| New rescue-agent cell explored | `+5` |
+| Drone discovers civilian | `+20` |
+| Civilian rescued | `+100` |
+| All civilians rescued | `+200` |
+| Rescue agent enters fire | `-100` |
+
+## Results
+
+The hackathon reward progression is preserved in `openenv.yaml` and visualized by `plots/reward_curve.png`.
+
+| System | Reward |
+| --- | ---: |
+| Random Agent | `-5000` |
+| Early PPO | `-3000` |
+| Improved PPO | `-347` |
+| Reward-Shaped PPO | `-135` |
+| PPO + NLP System | `-15` |
+
+Generate the chart:
+
 ```bash
-git clone [https://github.com/yourusername/openrescue-ai.git](https://github.com/yourusername/openrescue-ai.git)
-cd openrescue-ai
+python scripts/plot_rewards.py
+```
+
+## Local Setup
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+pip install -e .
+```
+
+Quick Gymnasium smoke test:
+
+```bash
+python - <<'PY'
+import gymnasium as gym
+import env
+
+e = gym.make("OpenRescueAI-v0")
+obs, info = e.reset(seed=42)
+obs, reward, terminated, truncated, info = e.step(1)
+print(obs.shape, reward, terminated, truncated, info["step"])
+PY
+```
+
+## Run The Demo
+
+The interactive Pygame demo loads the trained PPO model from `models/best_model.zip` and the Hugging Face zero-shot classifier.
+
+```bash
+python main.py
+```
+
+## Train PPO
+
+```bash
+python scripts/train_ppo.py --timesteps 200000 --seed 42 --output models/best_model
+```
+
+The script uses `gym.make("OpenRescueAI-v0")`, `FlattenObservation`, `Monitor`, and Stable-Baselines3 PPO.
+
+## Evaluate PPO
+
+```bash
+python scripts/evaluate.py --model models/best_model.zip --episodes 10 --seed 42
+```
+
+This writes `plots/evaluation.json` with per-episode returns, saved civilians, and discovered messages.
+
+## OpenEnv API
+
+Run the OpenEnv/Hugging Face Space server:
+
+```bash
+uvicorn app:app --host 0.0.0.0 --port 7860
+```
+
+Endpoints:
+
+| Endpoint | Method | Purpose |
+| --- | --- | --- |
+| `/health` | `GET` | Health check |
+| `/reset` | `POST` | Reset the environment |
+| `/step` | `POST` | Step with JSON body `{"action": 1}` |
+| `/state` | `GET` | Current observation, info, termination flags, return |
+| `/tasks` | `GET` | OpenEnv task metadata |
+| `/docs` | `GET` | FastAPI docs |
+| `/web` | `GET` | Minimal browser UI |
+
+## Hugging Face Spaces Deployment
+
+This repository is deployment-ready as a Docker Space.
+
+```bash
+huggingface-cli login
+openenv push --repo-id <your-username>/openrescue-ai
+```
+
+Manual Docker run:
+
+```bash
+docker build -t openrescue-ai .
+docker run -p 7860:7860 openrescue-ai
+```
+
+The `openenv.yaml` manifest declares the environment ID, task, action space, observation space, reward function, API endpoints, artifacts, and reward results.
+
+## Submission Checklist
+
+- OpenEnv manifest: `openenv.yaml`
+- Gymnasium environment registration: `OpenRescueAI-v0`
+- HF Space entrypoint: `app.py`
+- Docker deployment: `Dockerfile`
+- PPO training script: `scripts/train_ppo.py`
+- Evaluation script: `scripts/evaluate.py`
+- Reward plot utility: `scripts/plot_rewards.py`
+- Reward evidence: `plots/reward_curve.png`
+- Trained model artifact: `models/best_model.zip`
+- Demo path with Hugging Face NLP override: `main.py`
+- Mini-blog: `BLOG.md`
+
